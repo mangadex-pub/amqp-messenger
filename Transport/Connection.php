@@ -485,7 +485,15 @@ class Connection
             } catch (\AMQPConnectionException $e) {
                 throw new \AMQPException('Could not connect to the AMQP server. Please verify the provided DSN.', 0, $e);
             }
-            $this->amqpChannel = $this->amqpFactory->createChannel($connection);
+
+            try {
+                $this->amqpChannel = $this->amqpFactory->createChannel($connection);
+            } catch (\AMQPException) {
+                // give the connection a try first, in case we just have a poisoned
+                // worker with a stale connection that needs replacement
+                $connection->disconnect();
+                return $this->channel();
+            }
 
             if ('' !== ($this->connectionOptions['confirm_timeout'] ?? '')) {
                 $this->amqpChannel->confirmSelect();

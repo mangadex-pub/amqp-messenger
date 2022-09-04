@@ -12,6 +12,7 @@
 namespace Symfony\Component\Messenger\Bridge\Amqp\Transport;
 
 use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Exception\TransportException;
 use Symfony\Component\Messenger\Transport\Receiver\MessageCountAwareInterface;
 use Symfony\Component\Messenger\Transport\Receiver\QueueReceiverInterface;
 use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
@@ -57,7 +58,31 @@ class AmqpTransport implements QueueReceiverInterface, TransportInterface, Setup
 
     public function send(Envelope $envelope): Envelope
     {
-        return $this->getSender()->send($envelope);
+        try {
+            return $this->getSender()->send($envelope);
+        } catch (TransportException $e) {
+            /** @var AmqpTransportPublicationAttemptsStamp|null $stamp */
+            $stamp = $envelope->last(AmqpTransportPublicationAttemptsStamp::class);
+
+            if (null === $stamp) {
+                $stamp = new AmqpTransportPublicationAttemptsStamp(0);
+                $envelope = $envelope->with($stamp);
+            } else {
+                $stamp->publishAttempts += 1;
+            }
+
+            if ($stamp->publishAttempts < 3) {
+                /*
+                 * We only disconnect: the Connection object will be cleaned and AmqpConnection reconnected afterwards
+                 * @see \Symfony\Component\Messenger\Bridge\Amqp\Transport\Connection::clearWhenDisconnected()
+                 */
+                $this->connection->channel()->getConnection()->disconnect();
+
+                return $this->send($envelope);
+            }
+
+            throw $e;
+        }
     }
 
     public function setup(): void
