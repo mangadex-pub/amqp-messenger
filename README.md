@@ -3,6 +3,8 @@ AMQP Messenger
 
 Provides AMQP integration for Symfony Messenger.
 
+**Archived** since the relevant fixes we were waiting on have been merged and released upstream.
+
 Resources
 ---------
 
